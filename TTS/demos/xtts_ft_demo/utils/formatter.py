@@ -124,10 +124,15 @@ def format_audio_list(audio_files, target_language="en", whisper_model = "large-
         if wav.size(0) != 1:
             wav = torch.mean(wav, dim=0, keepdim=True)
 
+        # resample to match xtts optimal
+        wav = torchaudio.functional.resample(wav, orig_freq=sr, new_freq=22050)
+        sr = 22050
+
         wav = wav.squeeze()
         audio_total_size += (wav.size(-1) / sr)
 
         segments, _ = asr_model.transcribe(audio_path,vad_filter=True, word_timestamps=True, language=target_language)
+        # TIME EATER!!
         segments = list(segments)
         # print(segments)
         i = 0

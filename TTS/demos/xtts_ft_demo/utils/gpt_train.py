@@ -20,8 +20,8 @@ def train_gpt(custom_model,version, language, num_epochs, batch_size, grad_acumm
 
     # print(f"XTTS version = {version}")
 
-    # Set here the path that the checkpoints will be saved. Default: ./run/training/
-    OUT_PATH = os.path.join(output_path, "run", "training")
+    # Set here the path that the checkpoints will be saved. Default: ./run/
+    OUT_PATH = os.path.join(output_path, "run")
 
     # Training Parameters
     OPTIMIZER_WD_ONLY_ON_WEIGHTS = True  # for multi-gpu training please make it False
