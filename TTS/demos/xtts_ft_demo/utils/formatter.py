@@ -132,7 +132,9 @@ def format_audio_list(audio_files, target_language="en", whisper_model = "large-
         audio_total_size += (wav.size(-1) / sr)
 
         segments, _ = asr_model.transcribe(audio_path,vad_filter=True, word_timestamps=True, language=target_language)
-        # TIME EATER!!
+        # Warning: segments is a generator so the transcription only starts when 
+        # you iterate over it. The transcription can be run to completion by gathering 
+        # the segments in a list or a for loop:
         segments = list(segments)
         # print(segments)
         i = 0

@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from time import sleep
 
 
 path_root = Path(__file__).parents[3]
@@ -21,6 +22,8 @@ from utils.gpt_train import train_gpt
 #todo early training stop
 #todo check why old ui has 44100kh and not 22050
 
+# -------------------
+is_running = True
 
 #  ------------------
 # define a logger to redirect 
@@ -108,7 +111,7 @@ def load_params(root_path, model_name):
     return eval_train, eval_csv, current_language
 
 #  ------------------
-def preprocess_dataset(audio_path, language, whisper_model, training_path, status_bar):
+def preprocess_dataset(audio_path, language, whisper_model, training_path, status_bar=None):
     clear_gpu_cache()
     training_path = Path(training_path) / "dataset"
     os.makedirs(training_path, exist_ok=True)
@@ -194,94 +197,98 @@ def optimize_model(training_path, clear_train_data):
 #  ------------------
 def train_model(model_to_train, xtts_version, language, num_epochs, batch_size, grad_acumm, 
                 root_path, model_name, whisper_model, max_audio_length, 
-                dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files):
-    clear_gpu_cache()
-    status_bar = None
-
-    audio_data = None
-    if dataset_active_tab == "local_folder":
-        audio_data = get_all_files_in_directory(dataset_local_folder_path)
-    elif dataset_active_tab == "file_upload":
-        audio_data = dataset_uploaded_files
-    else:
-        print("Should never happen, no audio data")
-        gr.Error("Should never happen, no audio data")
-        return 
-
-    msg = None
-    if audio_data is None or len(audio_data) == 0:
-        msg = "audio data can not be empty"
-    if model_name is None or (type(model_name) == str and len(model_name.strip()) == 0)\
-        or (type(model_name) == list and len(model_name) == 0):
-        msg = "model name can not be empty"
-    if root_path is None or len(root_path.strip()) == 0:
-        msg = "root path can not be empty"
-        
-    if msg is not None:
-        print(msg)
-        gr.Info(msg)
-        return
-
-
-    training_path = Path(root_path) / model_name / "training"
-    training_path.mkdir(parents=True, exist_ok=True)
-
-    train_csv, eval_csv = preprocess_dataset(audio_data, language, whisper_model, training_path, status_bar)
-
-    # Check if the dataset language matches the language you specified
-    lang_file_path = training_path / "dataset" / "lang.txt"
-
-    # Check if lang.txt already exists and contains a different language
-    current_language = None
-    if lang_file_path.exists():
-        with open(lang_file_path, 'r', encoding='utf-8') as existing_lang_file:
-            current_language = existing_lang_file.read().strip()
-            if current_language != language:
-                print("The language that was prepared for the dataset does not match the specified language. Change the language to the one specified in the dataset")
-                gr.Error("The language that was prepared for the dataset does not match the specified language. Change the language to the one specified in the dataset")
-                language = current_language
-
-    if not train_csv or not eval_csv:
-        print("Should never happen, no train_csv or eval_csv")
-        gr.Error("Should never happen, no train_csv or eval_csv")
-        return 
+                dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files,
+                kill_after_training):
     try:
+        clear_gpu_cache()
+
+        audio_data = None
+        if dataset_active_tab == "local_folder":
+            audio_data = get_all_files_in_directory(dataset_local_folder_path)
+        elif dataset_active_tab == "file_upload":
+            audio_data = dataset_uploaded_files
+        else:
+            print("Should never happen, no audio data")
+            gr.Error("Should never happen, no audio data")
+            return 
+
+        msg = None
+        if audio_data is None or len(audio_data) == 0:
+            msg = "audio data can not be empty"
+        if model_name is None or (type(model_name) == str and len(model_name.strip()) == 0)\
+            or (type(model_name) == list and len(model_name) == 0):
+            msg = "model name can not be empty"
+        if root_path is None or len(root_path.strip()) == 0:
+            msg = "root path can not be empty"
+            
+        if msg is not None:
+            print(msg)
+            gr.Info(msg)
+            return
+
+
+        training_path = Path(root_path) / model_name / "training"
+        training_path.mkdir(parents=True, exist_ok=True)
+
+        train_csv, eval_csv = preprocess_dataset(audio_data, language, whisper_model, training_path)
+
+        # Check if the dataset language matches the language you specified
+        lang_file_path = training_path / "dataset" / "lang.txt"
+
+        # Check if lang.txt already exists and contains a different language
+        current_language = None
+        if lang_file_path.exists():
+            with open(lang_file_path, 'r', encoding='utf-8') as existing_lang_file:
+                current_language = existing_lang_file.read().strip()
+                if current_language != language:
+                    print("The language that was prepared for the dataset does not match the specified language. Change the language to the one specified in the dataset")
+                    gr.Error("The language that was prepared for the dataset does not match the specified language. Change the language to the one specified in the dataset")
+                    language = current_language
+
+        if not train_csv or not eval_csv:
+            print("Should never happen, no train_csv or eval_csv")
+            gr.Error("Should never happen, no train_csv or eval_csv")
+            return 
+
         # convert seconds to waveform frames
         max_audio_length = int(max_audio_length * 22050)
         speaker_xtts_path, config_path, original_xtts_checkpoint, vocab_file, exp_path, speaker_wav = train_gpt(
             model_to_train, xtts_version, language, num_epochs, batch_size, grad_acumm, train_csv, eval_csv, output_path=training_path, max_audio_length=max_audio_length)
-        print("oricheck: " + original_xtts_checkpoint)
+
+        # copy original files to avoid parameters changes issues
+        # os.system(f"cp {config_path} {exp_path}")
+        # os.system(f"cp {vocab_file} {exp_path}")
+
+        ready_dir = Path(training_path) / "ready"
+
+        ft_xtts_checkpoint = os.path.join(exp_path, "best_model.pth")
+
+        shutil.copy(ft_xtts_checkpoint, ready_dir / "unoptimize_model.pth")
+        # os.remove(ft_xtts_checkpoint)
+
+        ft_xtts_checkpoint = os.path.join(ready_dir, "unoptimize_model.pth")
+
+        # Reference
+        # Move reference audio to output folder and rename it
+        speaker_reference_path = Path(speaker_wav)
+        print(f"speaker wav: {speaker_reference_path}")
+        speaker_reference_new_path = ready_dir / "reference.wav"
+        shutil.copy(speaker_reference_path, speaker_reference_new_path)
+
+        optimize_model(training_path, "none")
+
+        print("Model training done! Model moved into models folder")
+        gr.Info("Model training done! Model moved into models folder")
+
     except:
         traceback.print_exc()
         error = traceback.format_exc()
-        return
 
-    # copy original files to avoid parameters changes issues
-    # os.system(f"cp {config_path} {exp_path}")
-    # os.system(f"cp {vocab_file} {exp_path}")
 
-    ready_dir = Path(training_path) / "ready"
-
-    ft_xtts_checkpoint = os.path.join(exp_path, "best_model.pth")
-    print("ft_xtts_check: " + ft_xtts_checkpoint)
-
-    shutil.copy(ft_xtts_checkpoint, ready_dir / "unoptimize_model.pth")
-    # os.remove(ft_xtts_checkpoint)
-
-    ft_xtts_checkpoint = os.path.join(ready_dir, "unoptimize_model.pth")
-    print("ft_xtts_check2: " + ft_xtts_checkpoint)
-
-    # Reference
-    # Move reference audio to output folder and rename it
-    speaker_reference_path = Path(speaker_wav)
-    print(f"speaker wav: {speaker_reference_path}")
-    speaker_reference_new_path = ready_dir / "reference.wav"
-    shutil.copy(speaker_reference_path, speaker_reference_new_path)
-
-    optimize_model(training_path, "none")
-
-    print("Model training done! Model moved into models folder")
-    gr.Info("Model training done! Model moved into models folder")
+    if kill_after_training:
+        global is_running
+        is_running = False
+        trainer.close()
 
     # clear_gpu_cache()
     return
@@ -307,6 +314,10 @@ if __name__ == "__main__":
     with gr.Blocks() as trainer:
         with gr.Tab("1 - Data processing & Training"):
             gr.Markdown("# 1 Stage - Prepare Dataset")
+            kill_after_training = gr.Checkbox(
+                value=True,
+                label="Kill after training",
+            )
             root_path = gr.Textbox(
                 label="root path (where all the model folders are located):",
                 interactive=True,
@@ -324,7 +335,7 @@ if __name__ == "__main__":
                 with gr.Tab("Local Folder", id="local_folder") as dataset_local_folder_path_tab:
                     dataset_local_folder_path = gr.Textbox(
                         label="Dataset path (where the audio files are):",
-                        value="/content/drive/",
+                        value="/content/drive/MyDrive/ai_voice/tts",
                         interactive=True,
                     )
 
@@ -454,7 +465,8 @@ if __name__ == "__main__":
         train_btn.click(fn=train_model, inputs=[model_to_train, xtts_version, lang, num_epochs,
                                                 batch_size, grad_acumm, root_path, model_name, 
                                                 whisper_model, max_audio_length,
-                                                dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files]
+                                                dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files,
+                                                kill_after_training]
                                                 , outputs=[])
 
     # ---------------
@@ -464,5 +476,9 @@ if __name__ == "__main__":
         share=True,
         debug=False,
         server_port=6666,
-        server_name="0.0.0.0"
+        server_name="0.0.0.0",
+        prevent_thread_lock = True,
     )
+
+while is_running:
+    sleep(0.5)
