@@ -15,12 +15,17 @@ import traceback
 import shutil
 from utils.formatter import format_audio_list, find_latest_best_model
 from utils.gpt_train import train_gpt
-#todo properly continue training
-#todo loss graph
 
+#todo properly continue training?
+
+#support zipped data
+#whisper float16
 #todo save every x epochs
 #todo early training stop
-#todo check why old ui has 44100kh and not 22050
+
+if not torch.cuda.is_available():
+    print("Cuda false")
+    exit()
 
 # -------------------
 is_running = True
@@ -75,6 +80,7 @@ def get_all_files_in_directory(directory):
 
 #  ------------------
 def load_params(root_path, model_name):
+    root_path = root_path.strip('" ')
     root_path = Path(root_path)
     if not root_path.exists():
         gr.Info("Could not find and load params.")
@@ -201,6 +207,9 @@ def train_model(model_to_train, xtts_version, language, num_epochs, batch_size, 
                 kill_after_training):
     try:
         clear_gpu_cache()
+        root_path = root_path.strip('" ')
+        model_to_train = model_to_train.strip('" ')
+        dataset_local_folder_path = dataset_local_folder_path.strip('" ')
 
         audio_data = None
         if dataset_active_tab == "local_folder":
@@ -426,6 +435,7 @@ if __name__ == "__main__":
         # functions
         # Callback function to update dropdown options when root path changes
         def update_dropdown_options(root_path):
+            root_path = root_path.strip('" ')
             try:
                 if os.path.isdir(root_path):
                         folder_names = [folder for folder in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, folder))]
@@ -442,8 +452,9 @@ if __name__ == "__main__":
 
         # ---------------
         def update_dataset_path(root_path, model_name):
+            root_path = root_path.strip('" ')
             if model_name is not None and len(model_name.strip()) > 0\
-                and root_path is not None and len(root_path.strip()) > 0:
+                and root_path is not None and len(root_path) > 0:
 
                 model_to_train = find_latest_best_model(str(Path(root_path) / model_name))
                 if model_to_train is None:
