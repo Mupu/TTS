@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 from time import sleep
+from unittest import skip
 
 
 path_root = Path(__file__).parents[3]
@@ -214,17 +215,18 @@ def train_model(model_to_train, xtts_version, language, num_epochs, batch_size, 
         train_csv, eval_csv, lang = load_params(root_path, model_name)
 
         audio_data = None
-        if dataset_active_tab == "local_folder":
-            audio_data = get_all_files_in_directory(dataset_local_folder_path)
-        elif dataset_active_tab == "file_upload":
-            audio_data = dataset_uploaded_files
-        else:
-            print("Should never happen, no audio data")
-            gr.Error("Should never happen, no audio data")
-            return 
+        if not skip_preprocessing:
+            if dataset_active_tab == "local_folder":
+                audio_data = get_all_files_in_directory(dataset_local_folder_path)
+            elif dataset_active_tab == "file_upload":
+                audio_data = dataset_uploaded_files
+            else:
+                print("Should never happen, no audio data")
+                gr.Error("Should never happen, no audio data")
+                return 
 
         msg = None
-        if audio_data is None or len(audio_data) == 0:
+        if not skip_preprocessing and (audio_data is None or len(audio_data) == 0):
             msg = "audio data can not be empty"
         if model_name is None or (type(model_name) == str and len(model_name.strip()) == 0)\
             or (type(model_name) == list and len(model_name) == 0):
