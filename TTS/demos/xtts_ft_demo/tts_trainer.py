@@ -204,12 +204,14 @@ def optimize_model(training_path, clear_train_data):
 def train_model(model_to_train, xtts_version, language, num_epochs, batch_size, grad_acumm, 
                 root_path, model_name, whisper_model, max_audio_length, 
                 dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files,
-                kill_after_training):
+                kill_after_training, skip_preprocessing):
     try:
         clear_gpu_cache()
         root_path = root_path.strip('" ')
         model_to_train = model_to_train.strip('" ')
         dataset_local_folder_path = dataset_local_folder_path.strip('" ')
+        # load default locations so even if we skip preprocessing we have them
+        train_csv, eval_csv, lang = load_params(root_path, model_name)
 
         audio_data = None
         if dataset_active_tab == "local_folder":
@@ -239,7 +241,8 @@ def train_model(model_to_train, xtts_version, language, num_epochs, batch_size, 
         training_path = Path(root_path) / model_name / "training"
         training_path.mkdir(parents=True, exist_ok=True)
 
-        train_csv, eval_csv = preprocess_dataset(audio_data, language, whisper_model, training_path)
+        if not skip_preprocessing:
+            train_csv, eval_csv = preprocess_dataset(audio_data, language, whisper_model, training_path)
 
         # Check if the dataset language matches the language you specified
         lang_file_path = training_path / "dataset" / "lang.txt"
@@ -427,6 +430,10 @@ if __name__ == "__main__":
             )
             trainer.load(read_logs, None, logs_tts_train, every=1)
 
+            skip_preprocessing = gr.Checkbox(
+                value=False,
+                label="Skip the preprocessing step and only use existing dataset",
+            )
             train_btn = gr.Button(value="Start Training")
 
     
@@ -477,19 +484,29 @@ if __name__ == "__main__":
                                                 batch_size, grad_acumm, root_path, model_name, 
                                                 whisper_model, max_audio_length,
                                                 dataset_active_tab, dataset_local_folder_path, dataset_uploaded_files,
-                                                kill_after_training]
+                                                kill_after_training, skip_preprocessing]
                                                 , outputs=[])
 
     # ---------------
     # launch
-    trainer.launch(
-        inbrowser=True, 
-        share=True,
-        debug=False,
-        server_port=6666,
-        server_name="0.0.0.0",
-        prevent_thread_lock = True,
-    )
+    try:
+        trainer.launch(
+            inbrowser=True, 
+            share=True,
+            debug=False,
+            server_port=6666,
+            server_name="0.0.0.0",
+            prevent_thread_lock = True,
+        )
+    except OSError:
+        trainer.launch(
+            inbrowser=True, 
+            share=True,
+            debug=False,
+            server_port=6667,
+            server_name="0.0.0.0",
+            prevent_thread_lock = True,
+        )
 
 while is_running:
     sleep(0.5)
